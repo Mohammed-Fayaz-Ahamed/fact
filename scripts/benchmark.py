@@ -1,16 +1,21 @@
 import asyncio
 import time
+import random
 import httpx
 
 # Target Configuration
 TOTAL_REQUESTS = 10000
-CONCURRENCY_LIMIT = 100  # Number of concurrent workers hitting the server simultaneously
+CONCURRENCY_LIMIT = 100
 BASE_URL = "http://127.0.0.1:8000"
-ENDPOINTS = ["/", "/slow", "/error"]
+
+# Mock Tenants & Metadata Pools
+TENANTS = ["alpha-corp", "beta-labs", "gamma-tech", "delta-retail"]
 
 async def send_request(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, worker_id: int):
-    """Sends a request to a rotating target endpoint using a semaphore to limit concurrency."""
-    # Rotate through targets: 70% root, 20% slow, 10% error
+    """Sends a request with randomized multi-tenant attributes and sizes."""
+    # Select endpoints and tenants deterministically or randomly
+    tenant = random.choice(TENANTS)
+    
     if worker_id % 10 == 0:
         url = f"{BASE_URL}/error"
     elif worker_id % 5 == 0:
@@ -18,24 +23,29 @@ async def send_request(client: httpx.AsyncClient, semaphore: asyncio.Semaphore, 
     else:
         url = f"{BASE_URL}/"
 
+    # Generate custom headers representing our tenant and unique requests
+    headers = {
+        "x-tenant-id": tenant,
+        "x-request-id": f"req-bench-{worker_id}",
+        "content-length": str(random.randint(100, 5000)) if worker_id % 3 == 0 else "0"
+    }
+
     async with semaphore:
         start = time.perf_counter()
         try:
-            response = await client.get(url, timeout=10.0)
+            response = await client.get(url, headers=headers, timeout=10.0)
             latency = (time.perf_counter() - start) * 1000
-            return response.status_code, latency
-        except Exception as e:
-            return "FAILED", 0.0
+            return response.status_code, latency, tenant
+        except Exception:
+            return "FAILED", 0.0, tenant
 
 async def main():
     semaphore = asyncio.Semaphore(CONCURRENCY_LIMIT)
     
-    print(f" Initializing stress-test engine...")
-    print(f" Bombarding {BASE_URL} with {TOTAL_REQUESTS} requests (Max Concurrency: {CONCURRENCY_LIMIT})...")
+    print(f" Initializing multi-tenant stress-test engine...")
+    print(f" Bombarding {BASE_URL} with {TOTAL_REQUESTS} multi-tenant requests...")
     
-    # Configure connection pooling limits inside HTTPX to support high concurrency
     limits = httpx.Limits(max_keepalive_connections=CONCURRENCY_LIMIT, max_connections=CONCURRENCY_LIMIT * 2)
-    
     start_time = time.perf_counter()
     
     async with httpx.AsyncClient(limits=limits) as client:
@@ -44,12 +54,13 @@ async def main():
         
     total_time = time.perf_counter() - start_time
     
-    # Analyze metrics
     status_counts = {}
+    tenant_counts = {}
     latencies = []
     
-    for status, latency in results:
+    for status, latency, tenant in results:
         status_counts[status] = status_counts.get(status, 0) + 1
+        tenant_counts[tenant] = tenant_counts.get(tenant, 0) + 1
         if status != "FAILED":
             latencies.append(latency)
             
@@ -57,14 +68,14 @@ async def main():
     throughput = TOTAL_REQUESTS / total_time
     
     print("\n" + "="*40)
-    print(" BENCHMARK PERFORMANCE RESULTS")
+    print(" MULTI-TENANT BENCHMARK RESULTS")
     print("="*40)
-    print(f" Total Execution Time : {total_time:.2f} seconds")
-    print(f" Throughput            : {throughput:.2f} requests/sec")
-    print(f" Avg HTTP Round-trip  : {avg_latency:.2f} ms")
-    print("\n Response Distribution Summary:")
-    for status, count in status_counts.items():
-        print(f"  • Status {status} : {count} requests")
+    print(f" Total Time  : {total_time:.2f} seconds")
+    print(f" Throughput  : {throughput:.2f} req/sec")
+    print(f" Avg Latency : {avg_latency:.2f} ms")
+    print("\n Tenant Request Distribution:")
+    for t, c in tenant_counts.items():
+        print(f"  • {t:<15} : {c} requests")
     print("="*40)
 
 if __name__ == "__main__":

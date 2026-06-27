@@ -14,30 +14,46 @@ class ClickHouseTelemetryMiddleware(BaseHTTPMiddleware):
         exception_msg = ""
         status_code = 500
         
+        # 1. Extract multi-tenant routing key from headers
+        tenant_id = request.headers.get("x-tenant-id", "default-tenant")
+        
+        # 2. Calculate incoming request size from Content-Length header
         try:
-            # Pass the request down the FastAPI pipeline to the path operation
+            req_bytes = int(request.headers.get("content-length", 0))
+        except ValueError:
+            req_bytes = 0
+
+        try:
             response = await call_next(request)
             status_code = response.status_code
+            
+            # 3. Calculate outgoing response size
+            try:
+                res_bytes = int(response.headers.get("content-length", 0))
+            except ValueError:
+                res_bytes = 0
+                
             return response
         except Exception as e:
-            # Capture the raw exception message if the API endpoint fails
             exception_msg = str(e)
+            res_bytes = 0
             raise e
         finally:
-            # Calculate duration in milliseconds (precise to fractional points)
             duration = (time.perf_counter() - start_time) * 1000
             
-            # Construct a structured log entry matching our storage schema
+            # 4. Construct Evolved Log Entry
             log_entry = {
                 "timestamp": datetime.datetime.now(datetime.timezone.utc),
                 "request_id": request.headers.get("x-request-id", "none"),
+                "tenant_id": tenant_id,
                 "method": request.method,
                 "path": request.url.path,
                 "status_code": status_code,
                 "duration_ms": duration,
+                "request_bytes": req_bytes,
+                "response_bytes": res_bytes,
                 "client_ip": request.client.host if request.client else "127.0.0.1",
                 "exception_message": exception_msg
             }
             
-            # Non-blocking handoff to the storage engine's memory buffer queue
             await self.writer.enqueue(log_entry)
