@@ -107,3 +107,104 @@ class PostgresBatchWriter(BaseTelemetryWriter):
                     INSERT INTO api_logs (timestamp, request_id, method, path, status_code, duration_ms, client_ip, exception_message)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, data_rows)
+                
+import clickhouse_connect
+
+class ClickHouseBatchWriter(BaseTelemetryWriter):
+    def __init__(
+        self, 
+        host: str = "localhost", 
+        port: int = 8123, 
+        username: str = "default", 
+        password: str = "",
+        database: str = "default",
+        batch_size: int = 5000, # OLAP writes favor much larger batch limits
+        flush_interval_seconds: float = 3.0
+    ):
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.database = database
+        self.batch_size = batch_size
+        self.flush_interval_seconds = flush_interval_seconds
+        
+        self.queue: asyncio.Queue = asyncio.Queue()
+        self.worker_task: asyncio.Task = None
+        self.is_running = False
+
+    def start(self):
+        if not self.is_running:
+            self.is_running = True
+            self.worker_task = asyncio.create_task(self._batch_executor())
+            logger.info("FACT ClickHouse Batch Writer engine started.")
+
+    async def stop(self):
+        self.is_running = False
+        if self.worker_task:
+            self.worker_task.cancel()
+            try:
+                await self.worker_task
+            except asyncio.CancelledError:
+                pass
+        
+        remaining_items = []
+        while not self.queue.empty():
+            remaining_items.append(await self.queue.get())
+            self.queue.task_done()
+            
+        if remaining_items:
+            self._flush_to_db(remaining_items)
+
+    async def enqueue(self, item: Dict[str, Any]):
+        await self.queue.put(item)
+
+    async def _batch_executor(self):
+        while self.is_running:
+            batch: List[Dict[str, Any]] = []
+            start_time = asyncio.get_event_loop().time()
+
+            while len(batch) < self.batch_size:
+                time_remaining = self.flush_interval_seconds - (asyncio.get_event_loop().time() - start_time)
+                if time_remaining <= 0:
+                    break
+
+                try:
+                    item = await asyncio.wait_for(self.queue.get(), timeout=max(0.1, time_remaining))
+                    batch.append(item)
+                    self.queue.task_done()
+                except asyncio.TimeoutError:
+                    break
+
+            if batch:
+                try:
+                    await asyncio.to_thread(self._flush_to_db, batch)
+                except Exception as e:
+                    logger.error(f"FACT Engine error trying to write telemetry to ClickHouse: {e}")
+
+    def _flush_to_db(self, batch: List[Dict[str, Any]]):
+        """Inserts columnar micro-batches directly into the local ClickHouse instance."""
+        # ClickHouse driver accepts data as matrix structures (list of tuples/lists)
+        data_rows = [
+            [
+                item["timestamp"], item["request_id"], item["method"], 
+                item["path"], item["status_code"], item["duration_ms"], 
+                item["client_ip"], item["exception_message"]
+            ]
+            for item in batch
+        ]
+        
+        client = clickhouse_connect.get_client(
+            host=self.host, 
+            port=self.port, 
+            username=self.username, 
+            password=self.password,
+            database=self.database
+        )
+        
+        client.insert(
+            table='api_logs',
+            data=data_rows,
+            column_names=['timestamp', 'request_id', 'method', 'path', 'status_code', 'duration_ms', 'client_ip', 'exception_message']
+        )
+        client.close()
