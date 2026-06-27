@@ -208,3 +208,31 @@ class ClickHouseBatchWriter(BaseTelemetryWriter):
             column_names=['timestamp', 'request_id', 'method', 'path', 'status_code', 'duration_ms', 'client_ip', 'exception_message']
         )
         client.close()
+        
+class TelemetryWriterFactory:
+    """Centralized initializer engine to return backend drivers via target configurations."""
+    
+    @staticmethod
+    def create_writer(engine_type: str, config: Dict[str, Any]) -> BaseTelemetryWriter:
+        engine_type = engine_type.lower().strip()
+        
+        if engine_type == "postgres" or engine_type == "postgresql":
+            return PostgresBatchWriter(
+                dsn=config.get("dsn", "postgresql://postgres:postgres@localhost:5432/postgres"),
+                batch_size=config.get("batch_size", 100),
+                flush_interval_seconds=config.get("flush_interval_seconds", 3.0)
+            )
+            
+        elif engine_type == "clickhouse":
+            return ClickHouseBatchWriter(
+                host=config.get("host", "127.0.0.1"),
+                port=config.get("port", 8123),
+                username=config.get("username", "default"),
+                password=config.get("password", ""),
+                database=config.get("database", "default"),
+                batch_size=config.get("batch_size", 5000),
+                flush_interval_seconds=config.get("flush_interval_seconds", 3.0)
+            )
+            
+        else:
+            raise ValueError(f"Unsupported telemetry storage engine backend target: '{engine_type}'")

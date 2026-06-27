@@ -2,39 +2,38 @@ import os
 import asyncio
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-from fact_core.storage import PostgresBatchWriter
+from fact_core.storage import TelemetryWriterFactory
 from fact_core.middleware import ClickHouseTelemetryMiddleware
 
-# Update this connection string to match your local PostgreSQL configuration
-POSTGRES_DSN = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/postgres")
+ENGINE_TYPE = os.getenv("FACT_STORAGE_BACKEND", "clickhouse")
 
-# Initialize the batching engine (Flush every 10 records or 3 seconds)
-writer = PostgresBatchWriter(dsn=POSTGRES_DSN, batch_size=10, flush_interval_seconds=3.0)
-
+CONFIG_MAP = {
+    "host": "127.0.0.1",
+    "port": 8123,
+    "batch_size": 5000 if ENGINE_TYPE == "clickhouse" else 100,
+    "flush_interval_seconds": 3.0,
+    "dsn": "postgresql://postgres:postgres@localhost:5432/postgres"
+}
+writer = TelemetryWriterFactory.create_writer(ENGINE_TYPE, CONFIG_MAP)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start the async background queue worker when FastAPI launches
     writer.start()
     yield
-    # Safely flush remaining memory items to the database on application shutdown
     await writer.stop()
 
 app = FastAPI(lifespan=lifespan)
-
-# Register FACT as a global application middleware
 app.add_middleware(ClickHouseTelemetryMiddleware, writer=writer)
 
 @app.get("/")
 async def root():
-    return {"message": "FACT telemetry logging is active!"}
+    return {"message": f"FACT telemetry processing active running on: {ENGINE_TYPE.upper()}"}
+
 
 @app.get("/slow")
 async def slow_route():
-    # Simulate an endpoint with high execution or database latency
     await asyncio.sleep(0.4)
     return {"status": "delayed"}
 
 @app.get("/error")
 async def error_route():
-    # Simulate an unexpected critical runtime failure
     raise ValueError("Simulated backend database error connection loss.")
