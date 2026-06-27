@@ -3,3 +3,9 @@ __pycache__/
 .venv/
 venv/
 .vscode/
+
+# Pytest caching and test coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+pytest_debug.log
