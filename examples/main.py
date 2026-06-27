@@ -37,3 +37,28 @@ async def slow_route():
 @app.get("/error")
 async def error_route():
     raise ValueError("Simulated backend database error connection loss.")
+
+from fastapi import APIRouter, Request
+
+router = APIRouter()
+
+@router.get("/checkout")
+async def checkout_endpoint(request: Request, items: int = 1):
+    # Simulating application logic attaching runtime tracking variables
+    request.state.fact_metadata = {
+        "user_tier": "premium",
+        "cart_items": str(items),
+        "experiment_group": "variant_b"
+    }
+    return {"status": "success", "processed_items": items}
+# Inside examples/main.py
+
+@app.get("/checkout")
+async def checkout_endpoint(request: Request, items: int = 1):
+    # Attaching runtime metadata tracking variables directly to request state
+    request.state.fact_metadata = {
+        "user_tier": "premium",
+        "cart_items": str(items),
+        "experiment_group": "variant_b"
+    }
+    return {"status": "success", "processed_items": items}

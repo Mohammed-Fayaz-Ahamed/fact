@@ -3,8 +3,17 @@ import logging
 from abc import ABC, abstractmethod
 from typing import List, Dict, Any
 import psycopg
+import json
+import os
+from datetime import timezone, datetime
 
 logger = logging.getLogger("fact")
+
+#===== Configurable constants for retry and dead-letter queue handling =======
+
+MAX_RETRIES = 5
+BASE_RETRY_DELAY = 1  # seconds
+DLQ_FILE = "failed_batches/telemetry_dlq.jsonl"
 
 class BaseTelemetryWriter(ABC):
     """Abstract interface to decouple FastAPI middleware from underlying storage drivers."""
@@ -15,7 +24,48 @@ class BaseTelemetryWriter(ABC):
     @abstractmethod
     def _flush_to_db(self, batch: List[Dict[str, Any]]) -> None:
         pass
+    async def _write_with_retry(self, batch: List[Dict[str, Any]]):
+        """
+        Attempt to write a telemetry batch with exponential backoff.
+        Failed batches are written to the DLQ.
+        """
+        for attempt in range(MAX_RETRIES):
+            try:
+                await asyncio.to_thread(self._flush_to_db, batch)
+                return
 
+            except Exception as e:
+                logger.warning(
+                    f"Storage write failed (attempt {attempt + 1}/{MAX_RETRIES}): {e}"
+                )
+
+                if attempt == MAX_RETRIES - 1:
+                    self._write_to_dlq(batch, str(e))
+                    return
+
+                await asyncio.sleep(BASE_RETRY_DELAY * (2 ** attempt))
+    def _write_to_dlq(
+        self,
+        batch: List[Dict[str, Any]],
+        error: str,
+    ):
+        """
+        Persist permanently failed telemetry batches.
+        """
+
+        os.makedirs(os.path.dirname(DLQ_FILE), exist_ok=True)
+
+        record = {
+            "failed_at": datetime.now(timezone.utc).isoformat(),
+            "error": error,
+            "batch": batch,
+        }
+
+        with open(DLQ_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, default=str))
+            f.write("\n")
+
+        logger.error("Telemetry batch written to DLQ.")
 
 class PostgresBatchWriter(BaseTelemetryWriter):
     def __init__(
@@ -56,8 +106,10 @@ class PostgresBatchWriter(BaseTelemetryWriter):
             self.queue.task_done()
             
         if remaining_items:
-            self._flush_to_db(remaining_items)
-            logger.info(f"FACT Shutdown complete. Flushed final {len(remaining_items)} remaining log entries.")
+            try:
+                self._flush_to_db(remaining_items)
+            except Exception as e:
+                self._write_to_dlq(remaining_items, str(e))
 
     async def enqueue(self, item: Dict[str, Any]):
         """Non-blocking injection into the memory queue."""
@@ -83,19 +135,15 @@ class PostgresBatchWriter(BaseTelemetryWriter):
                     break
 
             if batch:
-                try:
-                    # Offload blocking database network I/O execution to an isolated thread pool
-                    await asyncio.to_thread(self._flush_to_db, batch)
-                except Exception as e:
-                    logger.error(f"FACT Engine error trying to write telemetry to Postgres: {e}")
-
+                await self._write_with_retry(batch)
+                
     def _flush_to_db(self, batch: List[Dict[str, Any]]):
         """Executes a thread-safe bulk transactional write into PostgreSQL."""
         data_rows = [
             (
                 item["timestamp"], item["request_id"], item["method"], 
                 item["path"], item["status_code"], item["duration_ms"], 
-                item["client_ip"], item["exception_message"]
+                item["client_ip"], item["exception_message"], item.get("metadata", {})
             )
             for item in batch
         ]
@@ -104,8 +152,8 @@ class PostgresBatchWriter(BaseTelemetryWriter):
         with psycopg.connect(self.dsn) as conn:
             with conn.cursor() as cur:
                 cur.executemany("""
-                    INSERT INTO api_logs (timestamp, request_id, method, path, status_code, duration_ms, client_ip, exception_message)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    INSERT INTO api_logs (timestamp, request_id, method, path, status_code, duration_ms, client_ip, exception_message, metadata)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """, data_rows)
                 
 import clickhouse_connect
@@ -154,11 +202,16 @@ class ClickHouseBatchWriter(BaseTelemetryWriter):
             self.queue.task_done()
             
         if remaining_items:
-            self._flush_to_db(remaining_items)
+            try:
+                self._flush_to_db(remaining_items)
+            except Exception as e:
+                self._write_to_dlq(remaining_items, str(e))
 
     async def enqueue(self, item: Dict[str, Any]):
         await self.queue.put(item)
-
+    
+    
+    
     async def _batch_executor(self):
         while self.is_running:
             batch: List[Dict[str, Any]] = []
@@ -177,19 +230,17 @@ class ClickHouseBatchWriter(BaseTelemetryWriter):
                     break
 
             if batch:
-                try:
-                    await asyncio.to_thread(self._flush_to_db, batch)
-                except Exception as e:
-                    logger.error(f"FACT Engine error trying to write telemetry to ClickHouse: {e}")
-
+                await self._write_with_retry(batch)
+    
+                
     def _flush_to_db(self, batch: List[Dict[str, Any]]):
         """Inserts columnar micro-batches directly into the local ClickHouse instance."""
         # ClickHouse driver accepts data as matrix structures (list of tuples/lists)
         data_rows = [
             [
-                item["timestamp"], item["request_id"], item["method"], 
+                item["timestamp"], item["request_id"], item["tenant_id"], item["method"], 
                 item["path"], item["status_code"], item["duration_ms"], 
-                item["client_ip"], item["exception_message"]
+                item["client_ip"], item["exception_message"], item.get("metadata", {})
             ]
             for item in batch
         ]
@@ -205,7 +256,7 @@ class ClickHouseBatchWriter(BaseTelemetryWriter):
         client.insert(
             table='api_logs',
             data=data_rows,
-            column_names=['timestamp', 'request_id', 'method', 'path', 'status_code', 'duration_ms', 'client_ip', 'exception_message']
+            column_names=['timestamp', 'request_id', 'tenant_id', 'method', 'path', 'status_code', 'duration_ms', 'client_ip', 'exception_message', 'metadata']
         )
         client.close()
         
