@@ -1,10 +1,13 @@
-# FACT
 <p align="center">
-  <strong>FastAPI Advanced Cloud Telemetry</strong>
+  <img src="assets/logo/logo-horizontal.svg"
+       alt="FACT Logo"
+       width="500">
 </p>
 
+<h1 align="center">FACT</h1>
+
 <p align="center">
-  High-performance asynchronous telemetry framework for FastAPI with pluggable storage backends.
+High-performance asynchronous telemetry for FastAPI.
 </p>
 
 <p align="center">
