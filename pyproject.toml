@@ -8,7 +8,7 @@ version = "0.1.0a1"
 description = "An asynchronous telemetry framework for FastAPI with pluggable storage backends."
 readme = "README.md"
 requires-python = ">=3.10,<4.0"
-license = { text = "License to be finalized before public release" }
+license = { text = "Apache-2.0" }
 
 authors = [
 { name = "Mohammed Fayaz Ahamed", email = "mdfayaz20061998@gmail.com" }
@@ -31,7 +31,7 @@ classifiers = [
 "Framework :: FastAPI",
 "Framework :: AsyncIO",
 "Intended Audience :: Developers",
-"License :: Other/Proprietary License",
+"License :: OSI Approved :: Apache Software License",
 "Operating System :: OS Independent",
 "Programming Language :: Python :: 3",
 "Programming Language :: Python :: 3.10",
