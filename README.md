@@ -1,9 +1,22 @@
 # FACT
+<p align="center">
+  <strong>FastAPI Advanced Cloud Telemetry</strong>
+</p>
+
+<p align="center">
+  High-performance asynchronous telemetry framework for FastAPI with pluggable storage backends.
+</p>
+
+<p align="center">
+
 [![PyPI version](https://img.shields.io/pypi/v/fact-telemetry.svg)](https://pypi.org/project/fact-telemetry/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/fact-telemetry.svg)](https://pypi.org/project/fact-telemetry/)
 [![License](https://img.shields.io/pypi/l/fact-telemetry.svg)](LICENSE)
 [![CI](https://github.com/Mohammed-Fayaz-Ahamed/fact/actions/workflows/ci.yml/badge.svg)](https://github.com/Mohammed-Fayaz-Ahamed/fact/actions/workflows/ci.yml)
 
+</p>
+
+---
 
 **FACT (FastAPI Advanced Collection Telemetry)** is a lightweight, asynchronous telemetry framework for FastAPI applications.
 
