@@ -99,4 +99,6 @@ Implemented capabilities include:
 
 ## License
 
-License information will be added before the first public release.
+This project is licensed under the Apache License 2.0.
+
+See the [LICENSE](LICENSE) file for details.
