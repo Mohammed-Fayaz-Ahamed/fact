@@ -2,11 +2,12 @@ import json
 import pytest
 from pathlib import Path
 
-from fact_core.storage import BaseTelemetryWriter, MAX_RETRIES
-
+from fact_core.storage import BaseTelemetryWriter
+from fact_core.config import FactConfig
 
 class MockReliableWriter(BaseTelemetryWriter):
-    def __init__(self, fail_times=0):
+    def __init__(self, config: FactConfig, fail_times=0):
+        super().__init__(config)
         self.fail_times = fail_times
         self.attempts = 0
 
@@ -21,34 +22,42 @@ class MockReliableWriter(BaseTelemetryWriter):
 
 
 @pytest.mark.asyncio
-async def test_retry_succeeds_before_max_retries(tmp_path, monkeypatch):
-    dlq = tmp_path / "telemetry_dlq.jsonl"
+async def test_retry_succeeds_before_max_retries(tmp_path):
+    config = FactConfig(
+        dlq_path=str(tmp_path / "telemetry_dlq.jsonl"),
+        base_retry_delay=0,
+    )
 
-    monkeypatch.setattr("fact_core.storage.DLQ_FILE", str(dlq))
-
-    writer = MockReliableWriter(fail_times=2)
+    writer = MockReliableWriter(config=config, fail_times=2)
 
     batch = [{"request_id": "abc"}]
-    monkeypatch.setattr("fact_core.storage.BASE_RETRY_DELAY", 0)
     await writer._write_with_retry(batch)
+
+    dlq = Path(config.dlq_path)
+    
 
     assert writer.attempts == 3
     assert not dlq.exists()
 
 
 @pytest.mark.asyncio
-async def test_failed_batch_written_to_dlq(tmp_path, monkeypatch):
-    dlq = tmp_path / "telemetry_dlq.jsonl"
+async def test_failed_batch_written_to_dlq(tmp_path):
+    config = FactConfig(
+        dlq_path=str(tmp_path / "telemetry_dlq.jsonl"),
+        base_retry_delay=0,
+    )
 
-    monkeypatch.setattr("fact_core.storage.DLQ_FILE", str(dlq))
-
-    writer = MockReliableWriter(fail_times=MAX_RETRIES)
+    writer = MockReliableWriter(
+        config=config,
+        fail_times=config.max_retries,
+    )
 
     batch = [{"request_id": "abc"}]
-    monkeypatch.setattr("fact_core.storage.BASE_RETRY_DELAY", 0)
     await writer._write_with_retry(batch)
 
-    assert writer.attempts == MAX_RETRIES
+    dlq = Path(config.dlq_path)
+
+    assert writer.attempts == config.max_retries
     assert dlq.exists()
 
     with open(dlq, "r", encoding="utf-8") as f:

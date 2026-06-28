@@ -1,0 +1,76 @@
+[build-system]
+requires = ["setuptools>=69.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fact-telemetry"
+version = "0.1.0a1"
+description = "An asynchronous telemetry framework for FastAPI with pluggable storage backends."
+readme = "README.md"
+requires-python = ">=3.10,<4.0"
+license = { text = "License to be finalized before public release" }
+
+authors = [
+{ name = "Mohammed Fayaz Ahamed", email = "mdfayaz20061998@gmail.com" }
+]
+
+keywords = [
+"fastapi",
+"telemetry",
+"observability",
+"middleware",
+"clickhouse",
+"postgresql",
+"async",
+"analytics",
+"logging"
+]
+
+classifiers = [
+"Development Status :: 3 - Alpha",
+"Framework :: FastAPI",
+"Framework :: AsyncIO",
+"Intended Audience :: Developers",
+"License :: Other/Proprietary License",
+"Operating System :: OS Independent",
+"Programming Language :: Python :: 3",
+"Programming Language :: Python :: 3.10",
+"Programming Language :: Python :: 3.11",
+"Programming Language :: Python :: 3.12",
+"Programming Language :: Python :: 3.13",
+"Topic :: Internet :: WWW/HTTP",
+"Topic :: Software Development :: Libraries",
+"Topic :: System :: Monitoring"
+]
+
+dependencies = [
+"fastapi>=0.115.0",
+"starlette>=0.46.0",
+"clickhouse-connect>=0.8.0",
+"psycopg[binary]>=3.2.0"
+]
+
+[project.optional-dependencies]
+dev = [
+"pytest>=8.0",
+"pytest-asyncio>=1.0",
+"httpx>=0.28",
+"uvicorn>=0.35"
+]
+
+[project.urls]
+Homepage = "https://github.com/Mohammed-Fayaz-Ahamed/fact"
+Repository = "https://github.com/Mohammed-Fayaz-Ahamed/fact"
+Issues = "https://github.com/Mohammed-Fayaz-Ahamed/fact/issues"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["fact_core*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+testpaths = [
+"tests"
+]

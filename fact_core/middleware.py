@@ -3,6 +3,7 @@ import datetime
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from fact_core.storage import BaseTelemetryWriter
+from fact_core.validation import validate_telemetry_record
 
 class ClickHouseTelemetryMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, writer: BaseTelemetryWriter):
@@ -16,7 +17,6 @@ class ClickHouseTelemetryMiddleware(BaseHTTPMiddleware):
         
         # 1. Extract multi-tenant routing key from headers
         tenant_id = request.headers.get("x-tenant-id", "default-tenant")
-        print(f"DEBUG MIDDLEWARE: Extracted Header -> {tenant_id}")
         # 2. Calculate incoming request size from Content-Length header
         try:
             req_bytes = int(request.headers.get("content-length", 0))
@@ -37,7 +37,7 @@ class ClickHouseTelemetryMiddleware(BaseHTTPMiddleware):
         except Exception as e:
             exception_msg = str(e)
             res_bytes = 0
-            raise e
+            raise
         finally:
             duration = (time.perf_counter() - start_time) * 1000
             
@@ -70,4 +70,9 @@ class ClickHouseTelemetryMiddleware(BaseHTTPMiddleware):
                 "metadata": combined_metadata  # <-- ADDED TO INGESTION PAYLOAD
             }
             
-            await self.writer.enqueue(log_entry)
+            try:
+                validate_telemetry_record(log_entry)
+                await self.writer.enqueue(log_entry)
+
+            except ValueError as e:
+                print(f"FACT validation failed: {e}")
