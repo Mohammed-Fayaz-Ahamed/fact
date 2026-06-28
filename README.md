@@ -28,31 +28,19 @@ FACT currently supports PostgreSQL and ClickHouse storage backends and provides 
 
 ## Why FACT?
 
-Modern FastAPI applications generate a continuous stream of telemetry, including API requests, business events, performance metrics, and operational data. Persisting this information synchronously can increase request latency and make reliability the application's responsibility.
+FACT was built to provide a simple and reliable telemetry pipeline for FastAPI applications.
 
-FACT provides an asynchronous telemetry pipeline that minimizes request overhead while ensuring telemetry is collected reliably.
+Its design focuses on minimizing request overhead while ensuring telemetry is collected reliably through asynchronous processing and configurable storage backends.
 
-With FACT, telemetry is:
+Key design goals include:
 
-* Captured automatically through FastAPI middleware
-* Buffered in an asynchronous in-memory queue
-* Persisted using configurable batch processing
-* Protected by automatic retries with exponential backoff
-* Preserved through a Dead Letter Queue (DLQ) when persistence fails
-* Written to pluggable storage backends such as PostgreSQL and ClickHouse
+* **Asynchronous by design** – Telemetry is processed in the background instead of blocking request handling.
+* **Reliable delivery** – Automatic retries with exponential backoff help recover from transient failures.
+* **Failure resilience** – Events that cannot be persisted are stored in a Dead Letter Queue (DLQ) for later inspection.
+* **Storage flexibility** – Multiple storage backends can be used without changing application code.
+* **Operational visibility** – Runtime metrics provide insight into queue health and processing performance.
+* **Developer-friendly** – Simple configuration and middleware integration make adoption straightforward.
 
-The result is a lightweight telemetry framework designed for high-throughput FastAPI applications without impacting request performance.
-
-
-
-| Traditional Telemetry           | FACT                                    |
-| ------------------------------- | --------------------------------------- |
-| Synchronous writes              | Asynchronous event queue                |
-| Individual database writes      | Batched persistence                     |
-| Manual retry implementation     | Built-in retry with exponential backoff |
-| Failed writes may be lost       | Dead Letter Queue (DLQ) support         |
-| Storage-specific implementation | Pluggable storage backends              |
-| Limited operational visibility  | Runtime telemetry metrics               |
 
 ---
 
