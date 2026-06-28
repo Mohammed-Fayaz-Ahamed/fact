@@ -44,6 +44,201 @@ Key design goals include:
 
 ---
 
+# Quick Start
+
+FACT supports two configuration approaches:
+
+* **Option 1 (Recommended): Environment Variables** – Best for production deployments.
+* **Option 2: Programmatic Configuration** – Useful for local development, testing, and experimentation.
+
+---
+
+## Option 1 — Environment Variables (Recommended)
+
+### Project Structure
+
+```text
+my-fastapi-app/
+├── .env
+├── main.py
+├── requirements.txt
+└── ...
+```
+
+### Step 1 — Install FACT
+
+```bash
+pip install fact-telemetry
+```
+
+### Step 2 — Configure FACT
+
+Create a `.env` file in the project root.
+
+```env
+FACT_STORAGE_BACKEND=clickhouse
+
+FACT_CLICKHOUSE_HOST=127.0.0.1
+FACT_CLICKHOUSE_PORT=8123
+FACT_CLICKHOUSE_USERNAME=default
+FACT_CLICKHOUSE_PASSWORD=
+FACT_CLICKHOUSE_DATABASE=default
+
+FACT_BATCH_SIZE=5000
+FACT_FLUSH_INTERVAL=3.0
+
+FACT_MAX_RETRIES=5
+FACT_BASE_RETRY_DELAY=1.0
+
+FACT_DLQ_PATH=failed_batches/telemetry_dlq.jsonl
+
+FACT_LOG_LEVEL=INFO
+```
+
+### Step 3 — Enable FACT
+
+Open your `main.py`.
+
+```python
+import asyncio
+
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+from fact_core.config import FactConfig
+from fact_core.middleware import ClickHouseTelemetryMiddleware
+from fact_core.storage import TelemetryWriterFactory
+
+config = FactConfig.from_env()
+
+writer = TelemetryWriterFactory.create_writer(config)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    writer.start()
+    yield
+    await writer.stop()
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    ClickHouseTelemetryMiddleware,
+    writer=writer,
+)
+```
+
+Your existing endpoints remain unchanged.
+
+```python
+@app.get("/")
+async def root():
+    return {"message": "Hello FACT"}
+```
+
+Run your application.
+
+```bash
+uvicorn main:app --reload
+```
+
+FACT now automatically captures, validates, batches, retries, and persists telemetry for every incoming request.
+
+---
+
+## Option 2 — Programmatic Configuration
+
+This approach is useful for local development, testing, or environments where configuration is managed directly in code.
+
+### Project Structure
+
+```text
+my-fastapi-app/
+├── main.py
+├── requirements.txt
+└── ...
+```
+
+### Step 1 — Install FACT
+
+```bash
+pip install fact-telemetry
+```
+
+### Step 2 — Configure FACT
+
+Open your `main.py`.
+
+```python
+import asyncio
+
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+
+from fact_core.config import FactConfig
+from fact_core.middleware import ClickHouseTelemetryMiddleware
+from fact_core.storage import TelemetryWriterFactory
+
+config = FactConfig(
+    storage_backend="clickhouse",
+    clickhouse_host="127.0.0.1",
+    clickhouse_port=8123,
+    clickhouse_username="default",
+    clickhouse_password="",
+    clickhouse_database="default",
+    batch_size=5000,
+    flush_interval_seconds=3.0,
+    max_retries=5,
+    base_retry_delay=1.0,
+    dlq_path="failed_batches/telemetry_dlq.jsonl",
+    log_level="INFO",
+)
+
+writer = TelemetryWriterFactory.create_writer(config)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    writer.start()
+    yield
+    await writer.stop()
+
+app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    ClickHouseTelemetryMiddleware,
+    writer=writer,
+)
+```
+
+Your existing API endpoints do not require any modifications.
+
+```python
+@app.get("/")
+async def root():
+    return {"message": "Hello FACT"}
+```
+
+Start the application.
+
+```bash
+uvicorn main:app --reload
+```
+
+Telemetry will now be collected automatically for every incoming request.
+
+---
+## What happens next?
+
+Once FACT is enabled:
+
+1. Every incoming request passes through the telemetry middleware.
+2. FACT validates the telemetry record.
+3. The record is placed into an asynchronous in-memory queue.
+4. Background workers batch telemetry records.
+5. Successful batches are written to the configured storage backend.
+6. Failed batches are retried automatically.
+7. Unrecoverable batches are written to the Dead Letter Queue (DLQ).
+
+---
 ## Features
 
 - Middleware-based automatic telemetry collection
