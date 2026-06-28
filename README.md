@@ -26,6 +26,36 @@ FACT currently supports PostgreSQL and ClickHouse storage backends and provides 
 
 ---
 
+## Why FACT?
+
+Modern FastAPI applications generate a continuous stream of telemetry, including API requests, business events, performance metrics, and operational data. Persisting this information synchronously can increase request latency and make reliability the application's responsibility.
+
+FACT provides an asynchronous telemetry pipeline that minimizes request overhead while ensuring telemetry is collected reliably.
+
+With FACT, telemetry is:
+
+* Captured automatically through FastAPI middleware
+* Buffered in an asynchronous in-memory queue
+* Persisted using configurable batch processing
+* Protected by automatic retries with exponential backoff
+* Preserved through a Dead Letter Queue (DLQ) when persistence fails
+* Written to pluggable storage backends such as PostgreSQL and ClickHouse
+
+The result is a lightweight telemetry framework designed for high-throughput FastAPI applications without impacting request performance.
+
+
+
+| Traditional Telemetry           | FACT                                    |
+| ------------------------------- | --------------------------------------- |
+| Synchronous writes              | Asynchronous event queue                |
+| Individual database writes      | Batched persistence                     |
+| Manual retry implementation     | Built-in retry with exponential backoff |
+| Failed writes may be lost       | Dead Letter Queue (DLQ) support         |
+| Storage-specific implementation | Pluggable storage backends              |
+| Limited operational visibility  | Runtime telemetry metrics               |
+
+---
+
 ## Features
 
 - Middleware-based automatic telemetry collection
