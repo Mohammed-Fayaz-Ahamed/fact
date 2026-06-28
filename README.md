@@ -1,6 +1,3 @@
-<p align="center">
-  <img src="assets/logo/logo-horizontal.svg" alt="FACT Logo" width="500">
-</p>
 
 <h1 align="center">FACT</h1>
 
